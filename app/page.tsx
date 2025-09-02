@@ -52,6 +52,14 @@ async function toDataUrl(url: string): Promise<string> {
   })
 }
 
+function sanitizeAndValidateUsername(input: string): { clean: string; valid: boolean; reason?: string } {
+  // trim, remove leading '@', remove spaces, lowercase
+  const clean = input.trim().replace(/^@/, "").replace(/\s+/g, "").toLowerCase()
+  // GitHub username rules: 1-39 chars, alphanumeric or hyphen, cannot start/end with hyphen
+  const valid = /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/.test(clean)
+  return { clean, valid, reason: valid ? undefined : "Enter a valid GitHub username" }
+}
+
 export default function Page() {
   // UI state
   const [username, setUsername] = useState("")
@@ -105,8 +113,18 @@ export default function Page() {
     setLoadingUser(true)
     setError(null)
     try {
-      const res = await fetch(`https://api.github.com/users/${encodeURIComponent(u)}`)
-      if (!res.ok) throw new Error("GitHub user not found")
+      const res = await fetch(`/api/github/user/${encodeURIComponent(u)}`)
+      if (res.status === 404) throw new Error("GitHub user not found")
+      if (res.status === 429) throw new Error("GitHub API rate limit reached. Try again later.")
+      if (res.status === 403) throw new Error("GitHub API access forbidden")
+      if (!res.ok) {
+        try {
+          const body = await res.json()
+          throw new Error(body?.message || "Failed to load GitHub user")
+        } catch {
+          throw new Error("Failed to load GitHub user")
+        }
+      }
       const data = (await res.json()) as GithubUser
       setGithubUser(data as GithubUser)
       try {
@@ -157,7 +175,11 @@ export default function Page() {
 
   async function fetchCommitCount(u: string) {
     try {
-      const res = await fetch(`https://api.github.com/users/${encodeURIComponent(u)}/events/public`)
+      const res = await fetch(`/api/github/events/${encodeURIComponent(u)}`)
+      if (res.status === 429) {
+        setCommitCount(null)
+        return
+      }
       if (!res.ok) throw new Error("Failed to load events")
       const events = (await res.json()) as any[]
       const commits = events.reduce((sum, ev) => {
@@ -172,10 +194,18 @@ export default function Page() {
     }
   }
 
+  const onUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUsername(e.target.value)
+    if (error) setError(null)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const u = username.trim()
-    if (!u) return
+    const { clean, valid, reason } = sanitizeAndValidateUsername(username)
+    if (!valid) {
+      setError(reason || "Enter a valid GitHub username")
+      return
+    }
 
     setSubmitted(true)
 
@@ -186,7 +216,7 @@ export default function Page() {
     setSpriteSrc(null)
     setCommitCount(null)
 
-    await Promise.all([fetchGithubUser(u), fetchPokemonById(usernameToGen1Id(u)), fetchCommitCount(u)])
+    await Promise.all([fetchGithubUser(clean), fetchPokemonById(usernameToGen1Id(clean)), fetchCommitCount(clean)])
   }
 
   async function downloadCard() {
@@ -209,7 +239,7 @@ export default function Page() {
           <div className="flex gap-2">
             <Input
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={onUsernameChange} // use the new change handler to clear errors as user types
               placeholder="Enter GitHub username"
               aria-label="GitHub username"
             />
@@ -217,9 +247,13 @@ export default function Page() {
               Create
             </Button>
           </div>
-          <p className="text-sm text-muted-foreground text-center">
-            Enter a GitHub username to generate a themed trainer card.
-          </p>
+          {error ? (
+            <p className="text-sm text-red-600 text-center">{error}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center">
+              Enter a GitHub username to generate a themed trainer card.
+            </p>
+          )}
         </form>
       </main>
     )
