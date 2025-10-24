@@ -34,7 +34,8 @@ Below the card you can:
 
 ## Usage
 
-- Enter a GitHub username (you can paste with or without a leading “@”).
+- Enter a GitHub username (you can paste with or without a leading “@”).![⚡️ Pikachu ⚡️ ~  Pokémon  ~  ✨GiF✨](https://github.com/user-attachments/assets/34ff529a-8b30-440a-a265-0c5454209882)
+
 - The app:
   - Sanitizes the username
   - Fetches the GitHub profile
